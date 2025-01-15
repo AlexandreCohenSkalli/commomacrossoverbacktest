@@ -1,8 +1,9 @@
-[tool.poetry]
+[project]
 name = "commomacrossoverbacktest"
 version = "0.0.0"
 description = "Python project designed to develop and implement backtesting for moving average crossover strategies applied to commodities underlyings"
-authors = ["Alexandre Cohen-Skalli"]
+authors = [{ name = "Alexandre Cohen-Skalli" }]
+
 license = "MIT"
 readme = "README.md"
 
@@ -11,12 +12,13 @@ python = "^3.10"
 pybacktestchain = "^0.2.1"
 
 [tool.semantic_release]
+version_variable = "pyproject.toml:version"
 version_toml = [
-    "pyproject.toml:tool.poetry.version",
-]                                                    # version location
-branch = "main"                                      # branch to make releases of
-changelog_file = "CHANGELOG.md"                      # changelog file
-build_command = "pip install poetry && poetry build" # build dists 
+    "pyproject.toml:tool.poetry.version"
+]
+branch = "main"
+changelog_file = "CHANGELOG.md"
+build_command = "pip install poetry && poetry build"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
