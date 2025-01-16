@@ -40,3 +40,47 @@ class ExponentialMovingAverage:
         df['EMA_Long'] = df[price_column].ewm(span=self.long_window, adjust=False).mean()
 
         return df
+    
+    def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Generate buy and sell signals based on Exponential Moving Average crossovers.
+
+        :param df: DataFrame with EMA_Short, EMA_Medium, and EMA_Long columns.
+        :return: DataFrame with added 'Signal' and 'Position' columns:
+                - 'Signal': 1 for buy, -1 for sell, 0 for hold.
+                - 'Position': Tracks the current position ('Buy', 'Sell', or None).
+        """
+        # Initialize Signal and Position columns
+        df['Signal'] = 0
+        df['Position'] = None
+
+        # Track the current position
+        position = None
+
+        for i in range(len(df)):
+            # Buy condition: EMA_Short > EMA_Medium > EMA_Long
+            if (
+                df['EMA_Short'][i] > df['EMA_Medium'][i] and
+                df['EMA_Medium'][i] > df['EMA_Long'][i] and
+                position != 'Long'
+            ):
+                df.at[i, 'Signal'] = 1
+                df.at[i, 'Position'] = 'Buy'
+                position = 'Long'
+            # Sell condition: EMA_Short < EMA_Medium < EMA_Long
+            elif (
+                df['EMA_Short'][i] < df['EMA_Medium'][i] and
+                df['EMA_Medium'][i] < df['EMA_Long'][i] and
+                position != 'Short'
+            ):
+                df.at[i, 'Signal'] = -1
+                df.at[i, 'Position'] = 'Sell'
+                position = 'Short'
+            else:
+                df.at[i, 'Signal'] = 0
+                df.at[i, 'Position'] = position
+                
+        filtered_df = df[df['Signal'] != 0]
+       
+        return df, filtered_df
+    
