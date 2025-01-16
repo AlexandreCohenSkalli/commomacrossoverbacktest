@@ -13,6 +13,9 @@ pybacktestchain = "^0.2.1"
 matplotlib = "^3.10.0"
 pandas = "^2.2.3"
 
+[tool.poetry.group.dev.dependencies]
+python-semantic-release = "^9.16.1"
+
 [tool.semantic_release]
 version_variable = "pyproject.toml:version"
 version_toml = [
