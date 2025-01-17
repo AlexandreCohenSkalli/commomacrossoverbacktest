@@ -4,13 +4,15 @@ import math
 import yfinance as yf
 import datetime
 import matplotlib.pyplot as plt
+from dataclasses import dataclass
 
+@dataclass
 class ExponentialMovingAverage:
     """
     A class to compute Exponential Moving Averages (EMA) for financial instruments.
     """
 
-    def __init__(self, short_window: int = 5, medium_window: int = 20, long_window: int = 50):
+    def __init__(self, short_window: int = 5, medium_window: int = 20, long_window: int = 250):
         """
         Initialize the ExponentialMovingAverage class.
 
@@ -41,46 +43,58 @@ class ExponentialMovingAverage:
 
         return df
     
-    def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
+    def generate_signals(self, df: pd.DataFrame, filter_signals: bool = True) -> pd.DataFrame:
         """
-        Generate buy and sell signals based on Exponential Moving Average crossovers.
-
-        :param df: DataFrame with EMA_Short, EMA_Medium, and EMA_Long columns.
-        :return: DataFrame with added 'Signal' and 'Position' columns:
-                - 'Signal': 1 for buy, -1 for sell, 0 for hold.
-                - 'Position': Tracks the current position ('Buy', 'Sell', or None).
+        Generate buy and sell signals based on Exponential Moving Average crossovers,
+        with support for multiple tickers.
         """
-        # Initialize Signal and Position columns
-        df['Signal'] = 0
-        df['Position'] = None
+        # Check for necessary columns
+        if 'ticker' not in df.columns:
+            raise ValueError("The 'ticker' column is missing from the DataFrame.")
+        if not {'EMA_Short', 'EMA_Medium', 'EMA_Long'}.issubset(df.columns):
+            raise ValueError("EMA columns are missing from the DataFrame. Ensure compute_ema is called first.")
 
-        # Track the current position
-        position = None
+        # Sort data by ticker and date
+        grouped = df.sort_values(by=['ticker', 'Date']).groupby('ticker')
 
-        for i in range(len(df)):
-            # Buy condition: EMA_Short > EMA_Medium > EMA_Long
-            if (
-                df['EMA_Short'][i] > df['EMA_Medium'][i] and
-                df['EMA_Medium'][i] > df['EMA_Long'][i] and
-                position != 'Long'
-            ):
-                df.at[i, 'Signal'] = 1
-                df.at[i, 'Position'] = 'Buy'
-                position = 'Long'
-            # Sell condition: EMA_Short < EMA_Medium < EMA_Long
-            elif (
-                df['EMA_Short'][i] < df['EMA_Medium'][i] and
-                df['EMA_Medium'][i] < df['EMA_Long'][i] and
-                position != 'Short'
-            ):
-                df.at[i, 'Signal'] = -1
-                df.at[i, 'Position'] = 'Sell'
-                position = 'Short'
-            else:
-                df.at[i, 'Signal'] = 0
-                df.at[i, 'Position'] = position
-                
-        filtered_df = df[df['Signal'] != 0]
-       
-        return df, filtered_df
-    
+        # Initialize an empty DataFrame for the results
+        signals_df = pd.DataFrame()
+
+        for ticker, group in grouped:
+            group = group.dropna(subset=['EMA_Short', 'EMA_Medium', 'EMA_Long']).copy()
+
+            # Initialize Signal column
+            group['Signal'] = 0
+
+            # Track the current position (Buy, Sell, or None)
+            position = None
+
+            for i in range(1, len(group)):
+                # Buy signal: EMA_Short crosses above EMA_Medium and EMA_Long
+                if (
+                    group['EMA_Short'].iloc[i] > group['EMA_Medium'].iloc[i] > group['EMA_Long'].iloc[i] and
+                    group['EMA_Short'].iloc[i - 1] <= group['EMA_Medium'].iloc[i - 1] and
+                    position != 'Long'
+                ):
+                    group.at[group.index[i], 'Signal'] = 1
+                    position = 'Long'
+
+                # Sell signal: EMA_Short crosses below EMA_Medium and EMA_Long
+                elif (
+                    group['EMA_Short'].iloc[i] < group['EMA_Medium'].iloc[i] < group['EMA_Long'].iloc[i] and
+                    group['EMA_Short'].iloc[i - 1] >= group['EMA_Medium'].iloc[i - 1] and
+                    position != 'Short'
+                ):
+                    group.at[group.index[i], 'Signal'] = -1
+                    position = 'Short'
+
+            # Append results for this ticker
+            signals_df = pd.concat([signals_df, group])
+
+        # Add column 'Position' (Buy or Sell)
+        signals_df['Position'] = signals_df['Signal'].apply(lambda x: 'Buy' if x == 1 else ('Sell' if x == -1 else None))
+
+        # Return filtered or full dataset
+        if filter_signals:
+            return signals_df[signals_df['Signal'] != 0]
+        return signals_df
