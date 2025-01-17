@@ -1,0 +1,111 @@
+import pandas as pd
+import logging
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import os
+import pickle
+
+from src.commomacrossoverbacktest.commo_informations import CommodityInformation, ExponentialMovingAverageInformation
+from src.commomacrossoverbacktest.commo_broker import CommoBroker
+from pybacktestchain.utils import generate_random_name
+from pybacktestchain.broker import Broker
+from pybacktestchain.data_module import DataModule, Position
+from numba import jit
+
+
+@dataclass
+class CommoBroker(Broker):
+     def __init__(self, cash: float):
+        """
+        Initializes the CommoBroker with a starting cash balance and necessary attributes.
+        """
+        super().__init__(cash)  # Initialize with parent Broker class
+        self.positions = []  # List of current positions
+        self.realized_pnl = []  # List of realized P&L
+        self.portfolio_value = []  # Track portfolio value over time
+
+     def sell(self, ticker: str, quantity: int, price: float, date: datetime):
+        """
+        Executes a sell order for the specified ticker, handling both closing long positions 
+        and initiating/increasing short positions.
+        """
+        # Check if the ticker already exists in the portfolio
+        if ticker in self.positions:
+            position = self.positions[ticker]
+            new_quantity = position.quantity - quantity
+            
+            # Update cash balance
+            self.cash += price * quantity
+
+            # If the new quantity is zero, remove the position
+            if new_quantity == 0:
+                del self.positions[ticker]
+            else:
+                # Update the position with the new quantity
+                position.quantity = new_quantity
+        else:
+            # No existing position, initiate a short position
+            self.positions[ticker] = Position(ticker, -quantity, price)
+            self.cash += price * quantity
+
+        # Log the transaction
+        self.log_transaction(date, 'SELL', ticker, quantity, price)
+
+
+@dataclass
+class Backtest:
+    initial_date: datetime
+    final_date: datetime
+    universe = ['GC=F', 'CL=F', 'CT=F', 'OJ=F', 'SB=F', 'ZS=F', 'ZC=F']
+    information_class: type = ExponentialMovingAverageInformation
+    time_column: str = 'Date' 
+    adj_close_column: str = 'Close'
+    initial_cash: int = 1000000
+    verbose: bool = True
+    broker: CommoBroker = CommoBroker(cash=initial_cash)
+
+    def run_backtest(self):
+        logging.info(f"Running backtest from {self.initial_date} to {self.final_date}.")
+        df = get_stocks_data(self.universe, self.initial_date.strftime('%Y-%m-%d'), self.final_date.strftime('%Y-%m-%d'))
+
+        data_module = DataModule(df)
+        info = self.information_class(
+            data_module=data_module,
+            time_column=self.time_column,
+            adj_close_column=self.adj_close_column,
+        )
+
+        for t in pd.date_range(self.initial_date, self.final_date, freq='D'):
+            prices = info.get_prices(t)
+            information_set = info.compute_information(t)
+            signals = information_set['signals']
+            info.commo_ptf(t, signals, prices, self.broker)
+
+        logging.info(f"Backtest completed. Final portfolio value: {self.broker.get_portfolio_value(prices)}")
+        transaction_log = self.broker.get_transaction_log()
+        transaction_log.to_csv("transaction_log.csv", index=False)
+
+    def calculate_portfolio_value(self, market_prices: dict) -> float:
+        """
+        Calculate the total portfolio value including cash, long positions, and short positions.
+
+        :param market_prices: A dictionary of tickers and their current market prices.
+        :return: The total portfolio value.
+        """
+        portfolio_value = self.cash  # Start with cash balance
+
+        for ticker, position in self.positions.items():
+            current_price = market_prices.get(ticker)
+            if current_price is None:
+                logging.warning(f"Price for {ticker} is missing, skipping in portfolio value calculation.")
+                continue
+
+            # For long positions, add value; for short positions, subtract value
+            position_value = position.quantity * current_price
+            portfolio_value += position_value
+
+        return portfolio_value
+
+
+
+

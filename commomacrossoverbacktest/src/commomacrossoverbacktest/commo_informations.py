@@ -3,6 +3,7 @@ from datetime import datetime
 from pybacktestchain.data_module import Information, DataModule
 from src.commomacrossoverbacktest.exponentialmovingaverage import ExponentialMovingAverage
 import pandas as pd
+import logging
 
 
 @dataclass
@@ -20,6 +21,7 @@ class CommodityInformation(Information):
         prices = data.groupby(self.commodity_column)[self.adj_close_column].last()
         return prices.to_dict()
     
+
 @dataclass
 class ExponentialMovingAverageInformation(Information):
     short_window: int = 5
@@ -38,9 +40,9 @@ class ExponentialMovingAverageInformation(Information):
 
         # Initialize the Exponential Moving Average (EMA) calculator
         ema_calculator = ExponentialMovingAverage(
-            short_window=self.short_window,  # Short-term EMA window (e.g., 5 days)
-            medium_window=self.medium_window,  # Medium-term EMA window (e.g., 20 days)
-            long_window=self.long_window  # Long-term EMA window (e.g., 250 days)
+            short_window=self.short_window,
+            medium_window=self.medium_window,
+            long_window=self.long_window
         )
 
         # Calculate EMAs for the entire dataset
@@ -61,7 +63,6 @@ class ExponentialMovingAverageInformation(Information):
 
         return information_set
 
-    
     def commo_ptf(self, t: datetime, signals: pd.DataFrame, prices: dict):
         """
         Adjust the portfolio based on Buy/Sell signals.
@@ -70,10 +71,15 @@ class ExponentialMovingAverageInformation(Information):
         :param signals: DataFrame containing 'ticker' and 'Signal' (-1 for Sell, 1 for Buy).
         :param prices: Dictionary of current prices for each ticker.
         """
-        # Ensure only active signals are processed
+        # Ensure only active signals are processed and sorted by date
         active_signals = signals[signals['Signal'] != 0]
+        active_signals = active_signals.sort_values(by='Date')
 
-        # Sell all positions where the signal is -1
+        # Calculate allocation per commodity
+        num_commodities = len(signals['ticker'].unique())
+        allocation_per_commodity = 0.8 * self.get_portfolio_value(prices) / num_commodities
+
+        # Process signals
         for _, row in active_signals.iterrows():
             ticker = row['ticker']
             signal = row['Signal']
@@ -85,44 +91,54 @@ class ExponentialMovingAverageInformation(Information):
                 continue
 
             if signal == -1:  # Sell signal
-                # Sell the entire position for this ticker
-                if ticker in self.positions and self.positions[ticker].quantity > 0:
-                    self.sell(ticker, self.positions[ticker].quantity, price, t)
+                if ticker in self.positions:
+                    position = self.positions[ticker]
 
-        # Calculate the cash available for new Buy signals
-        total_cash_to_invest = self.cash * 0.80  # Use 80% of available cash
-        num_buy_signals = (active_signals['Signal'] == 1).sum()
+                    # Close existing long position if any
+                    if position.quantity > 0:
+                        self.sell(ticker, position.quantity, price, t)
 
-        if num_buy_signals > 0:
-            # Allocate equal weight for each Buy signal
-            cash_per_ticker = total_cash_to_invest / num_buy_signals
+                    # Short an additional 20% of allocation
+                    allocation = 0.2 * allocation_per_commodity / price
+                    self.sell(ticker, int(allocation), price, t)
+                else:
+                    # Start a new short position with 20% allocation
+                    allocation = 0.2 * allocation_per_commodity / price
+                    self.sell(ticker, int(allocation), price, t)
 
-            for _, row in active_signals.iterrows():
-                ticker = row['ticker']
-                signal = row['Signal']
-                price = prices.get(ticker)
+            elif signal == 1:  # Buy signal
+                if ticker in self.positions and self.positions[ticker].quantity < 0:
+                    # Cover short position
+                    quantity_to_cover = abs(self.positions[ticker].quantity)
+                    cost_to_cover = quantity_to_cover * price
 
-                if signal == 1:  # Buy signal
-                    if price is None:
+                    # Check if we have enough cash
+                    if cost_to_cover > self.cash:
+                        # Use reserved cash
+                        reserve_cash = 0.2 * self.get_portfolio_value(prices)
+                        additional_cash_needed = cost_to_cover - self.cash
+
+                        if additional_cash_needed <= reserve_cash:
+                            # Temporarily use reserved cash to cover the short
+                            self.cash += additional_cash_needed
+                            self.buy(ticker, quantity_to_cover, price, t)
+                            self.cash -= additional_cash_needed  # Restore the reserve
+                        else:
+                            # Use as much cash as possible
+                            max_quantity_coverable = int(self.cash / price)
+                            self.buy(ticker, max_quantity_coverable, price, t)
+                    else:
+                        # Fully cover the short
+                        self.buy(ticker, quantity_to_cover, price, t)
+                else:
+                    # Start a new long position
+                    allocation = allocation_per_commodity / price
+                    quantity_to_buy = int(allocation)
+
+                    # Ensure we don't exceed available cash
+                    if quantity_to_buy * price > self.cash:
                         if self.verbose:
-                            logging.warning(f"Price for {ticker} not available on {t}")
-                        continue
+                            logging.warning(f"Not enough cash to buy {quantity_to_buy} of {ticker} at {price} on {t}.")
+                        quantity_to_buy = int(self.cash / price)
 
-                    # Calculate the quantity to buy with the allocated cash
-                    quantity_to_buy = int(cash_per_ticker / price)
-
-                    if quantity_to_buy > 0:
-                        self.buy(ticker, quantity_to_buy, price, t)
-
-        # Log the final portfolio status
-        if self.verbose:
-            logging.info(f"Portfolio updated at {t}. Cash: {self.cash}, Positions: {self.positions}")
-        
-
-
-            
-
-
-
-
-
+                    self.buy(ticker, quantity_to_buy, price, t)
