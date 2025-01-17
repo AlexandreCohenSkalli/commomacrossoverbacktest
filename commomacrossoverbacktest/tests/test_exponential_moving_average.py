@@ -22,7 +22,7 @@ ema_calculator = ExponentialMovingAverage(short_window=5, medium_window=20, long
 result = ema_calculator.compute_ema(df=ticker_data, price_column='Close', date_column='Date')
 
 # Step 6: Generate buy/sell/hold signals
-result, filtered_result = ema_calculator.generate_signals(result)
+filtered_result = ema_calculator.generate_signals(result)
 
 # Step 7: Visualize the filtered DataFrame
 print(filtered_result[['Date', 'Close', 'EMA_Short', 'EMA_Medium', 'EMA_Long', 'Signal', 'Position']].tail())
