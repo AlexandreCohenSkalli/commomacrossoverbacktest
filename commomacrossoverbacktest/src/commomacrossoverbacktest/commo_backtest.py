@@ -1,12 +1,13 @@
 import pandas as pd
 import logging
 from datetime import datetime
+import os
+from dataclasses import dataclass
 from src.commomacrossoverbacktest.commo_broker import CommoBroker
 from src.commomacrossoverbacktest.commo_informations import ExponentialMovingAverageInformation
 from pybacktestchain.data_module import DataModule, get_stocks_data
 from pybacktestchain.utils import generate_random_name
 import matplotlib.pyplot as plt
-from dataclasses import dataclass
 
 
 # Configuration des logs
@@ -57,15 +58,6 @@ class Backtest:
             prices = info.get_prices(t)
             information_set = info.compute_information(t)
             signals = information_set['signals']
-            print("Prices Data:")
-            for ticker, price in prices.items():
-                print(f"{ticker}: {price}")
-
-            print("Signals Data:")
-            if isinstance(signals, pd.DataFrame):
-                print(signals.head())
-            else:
-                print(signals)
 
             # Ajuster le portefeuille avec les signaux via le broker
             self.broker.commo_ptf(t, signals, prices)
@@ -77,18 +69,39 @@ class Backtest:
         # Créer un DataFrame pour l'évolution du P&L
         pnl_df = pd.DataFrame(pnl_history, columns=['Date', 'Portfolio Value'])
 
-        # Sauvegarder le log des transactions
-        transaction_log = self.broker.get_transaction_log()
-        transaction_log.to_csv("transaction_log.csv", index=False)
+        # Sauvegarder les résultats
+        self.save_results(pnl_df)
 
         logging.info(f"Backtest completed. Final portfolio value: {pnl_df['Portfolio Value'].iloc[-1]}")
 
         return pnl_df
 
+    def save_results(self, pnl_df):
+        # Sauvegarde des résultats
+        if not os.path.exists('backtests'):
+            os.makedirs('backtests')
+
+        transaction_log_path = f"backtests/{self.backtest_name}_transactions.csv"
+        portfolio_evolution_path = f"backtests/{self.backtest_name}_portfolio.csv"
+
+        # Enregistrer les transactions avec des colonnes bien formatées
+        self.broker.get_transaction_log().to_csv(
+            transaction_log_path, index=False, sep=',', float_format='%.2f'
+        )
+        
+        # Enregistrer l'évolution du portefeuille
+        pnl_df.to_csv(
+            portfolio_evolution_path, index=False, sep=',', float_format='%.2f'
+        )
+
+        logging.info(f"Results saved to {transaction_log_path} and {portfolio_evolution_path}")
+
+
+
 # Lancer le backtest
 if __name__ == "__main__":
     backtest = Backtest(
-        initial_date=datetime(2020, 1, 1),
+        initial_date=datetime(2022, 1, 1),
         final_date=datetime(2023, 1, 1),
         universe=['GC=F', 'CL=F', 'CT=F', 'OJ=F', 'SB=F', 'ZS=F', 'ZC=F'],
         initial_cash=1000000
@@ -105,13 +118,3 @@ if __name__ == "__main__":
     plt.legend()
     plt.grid()
     plt.show()
-
-    logging.info(f"Backtest completed. Final portfolio value: {self.broker.get_portfolio_value(info.get_prices(self.final_date))}")
-    df = self.broker.get_transaction_log()
-
-    # create backtests folder if it does not exist
-    if not os.path.exists('backtests'):
-        os.makedirs('backtests')
-
-    # save to csv, use the backtest name 
-    df.to_csv(f"backtests/{self.backtest_name}.csv")
