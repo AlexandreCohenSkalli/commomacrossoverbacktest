@@ -1,6 +1,6 @@
 [project]
 name = "commomacrossoverbacktest"
-version = "0.0.0"
+version = "0.2.0"
 description = "Python project designed to develop and implement backtesting for moving average crossover strategies applied to commodities underlyings"
 authors = [{ name = "Alexandre Cohen-Skalli" }]
 
