@@ -4,12 +4,14 @@
 
 ## Features
 
-- **Backtesting Framework**: Simulate and evaluate trading strategies based on moving average crossovers.
+- **Backtesting Framework**: Simulate and evaluate trading strategies based on exponential moving average crossovers, with short medium and long MA.
 - **Commodity Trading**: Focused specifically on commodities like gold (`GC=F`), crude oil (`CL=F`), and others.
 - **Customizable Signals**: Easily extend or modify signal generation logic using Exponential Moving Averages (EMAs).
 - **Transaction Logs**: Automatic generation of detailed transaction logs and portfolio evolution files.
 - **Visualization**: Plot portfolio value evolution over time for comprehensive strategy evaluation.
 - **Configurable Parameters**: Adjust initial cash, trading universe, and backtesting periods.
+- **Strategy**: Buy when MA_short > MA_medium > MA_long et sell if MA_short < MA_medium < MA_long.
+
 
 ## Installation
 
@@ -17,7 +19,7 @@ Install the package using pip:
 
 ```bash
 pip install commomacrossoverbacktest
-
+```
 ## Usage
 
 ### Basic Example
@@ -41,7 +43,7 @@ pnl_df = backtest.run_backtest()
 
 # Visualize the portfolio value evolution
 pnl_df.plot(x='Date', y='Portfolio Value', title="Portfolio Value Over Time")
-
+```
 
 ## Contributing
 
